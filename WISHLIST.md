@@ -44,7 +44,7 @@ event ids out of this file.
    is the one thing the frame adds over the source calendars, and the weekly
    plan needs "who is driving". Today the run guesses from whose calendar holds
    the event.
-8. [ ] **Member filter on `find_free_slots` and `find_conflicts`.** Optional
+8. [x] **Member filter on `find_free_slots` and `find_conflicts`.** Optional
    `member` (name or category id) so the tools look only at that person's
    events. Depends on item 7. Until then, availability comes from the Google
    and Outlook calendars, not these tools.

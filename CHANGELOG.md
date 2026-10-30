@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-10-30
+
+### Added
+
+- **Member filter on `find_free_slots` and `find_conflicts`**: optional
+  `member` (name or category ID) counts only the events assigned to that family
+  member on the frame, so the tools answer "when is David free?" and "is David
+  double-booked?". Events Skylight sent no assignment data for are kept as
+  busy rather than dropped, and the reply says how many.
+
 ## [1.8.0] - 2026-10-30
 
 ### Added

@@ -13,7 +13,8 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getCalendarEvents } from "../api/endpoints/calendar.js";
+import { eventCategoryIds, getCalendarEvents, getCalendarEventsWithAssignees } from "../api/endpoints/calendar.js";
+import { resolveCategory } from "../api/endpoints/categories.js";
 import { getChores } from "../api/endpoints/chores.js";
 import { getListWithItems, getLists } from "../api/endpoints/lists.js";
 import {
@@ -53,6 +54,49 @@ function resolveRange(date: string | undefined, dateEnd: string | undefined, day
   if (end < start) throw new Error("dateEnd is before date");
   if (eachDay(start, end).length > MAX_DAYS) throw new Error(`Range is longer than ${MAX_DAYS} days`);
   return { start, end };
+}
+
+interface TimedIntervals {
+  intervals: Interval[];
+  /** "for Alex (category ID: 25)" when filtered by member, else "". */
+  forWho: string;
+  /** Caveat to show, e.g. events kept because Skylight sent no assignment. */
+  note: string;
+}
+
+/**
+ * Calendar events in a range as intervals, optionally only those assigned to
+ * one family member (name or category ID). Events with no assignment data are
+ * kept, never dropped: dropping them could report someone free who is busy.
+ */
+async function loadIntervals(start: string, end: string, tz: string, member?: string): Promise<TimedIntervals | { error: string }> {
+  const toIntervals = (events: Array<{ id: string; attributes: Record<string, unknown> }>) =>
+    events.map((e) => eventToInterval(e, tz)).filter((i): i is Interval => i !== null);
+
+  if (!member) {
+    const events = await getCalendarEvents({ dateMin: start, dateMax: end, timezone: tz });
+    return { intervals: toIntervals(events), forWho: "", note: "" };
+  }
+
+  const resolved = await resolveCategory(member);
+  if (!resolved.ok) return { error: resolved.error };
+  const who = resolved.category;
+
+  const { events } = await getCalendarEventsWithAssignees({ dateMin: start, dateMax: end, timezone: tz });
+  let unknown = 0;
+  const mine = events.filter((e) => {
+    const ids = eventCategoryIds(e);
+    if (ids === null) {
+      unknown++;
+      return true;
+    }
+    return ids.includes(who.id);
+  });
+  return {
+    intervals: toIntervals(mine),
+    forWho: ` for ${who.attributes.label ?? "Unnamed"} (category ID: ${who.id})`,
+    note: unknown ? `\n\nNote: ${unknown} event(s) had no assignment data and were counted as this member's.` : "",
+  };
 }
 
 /** Meals for a range, keyed by "YYYY-MM-DD|Category". Null if the account has no meal planning. */
@@ -174,24 +218,29 @@ Parameters:
     "find_conflicts",
     `Find calendar events that overlap in time within a date range. All-day events never count as conflicts.
 
+With member, only that family member's events count (the events assigned to
+them on the frame, as get_calendar_events shows in assigned_to), so this
+answers "is David double-booked?".
+
 Returns each overlapping pair with the overlap window, or "none".`,
     {
       date: z.string().optional().describe("First day. Default today."),
       dateEnd: z.string().optional().describe("Last day. Default 7 days."),
       days: z.number().int().min(1).max(MAX_DAYS).optional(),
+      member: z.string().optional().describe("Only this family member's events: name or category ID from get_family_members."),
     },
-    async ({ date, dateEnd, days }) => {
+    async ({ date, dateEnd, days, member }) => {
       try {
         const tz = await getHouseholdTimezone();
         const { start, end } = resolveRange(date, dateEnd, days, tz);
-        const events = await getCalendarEvents({ dateMin: start, dateMax: end, timezone: tz });
-        const intervals = events.map((e) => eventToInterval(e as { id: string; attributes: Record<string, unknown> }, tz)).filter((i): i is Interval => i !== null);
-        const conflicts = findConflicts(intervals);
-        if (conflicts.length === 0) return text(`No conflicts between ${formatDay(start)} and ${formatDay(end)}.`);
+        const loaded = await loadIntervals(start, end, tz, member);
+        if ("error" in loaded) return text(loaded.error, true);
+        const conflicts = findConflicts(loaded.intervals);
+        if (conflicts.length === 0) return text(`No conflicts${loaded.forWho} between ${formatDay(start)} and ${formatDay(end)}.${loaded.note}`);
         const lines = conflicts.map(
           (c) => `- ${formatDay(dateOf(c.overlapStart, tz))}: "${c.a.summary}" (${formatRange(c.a.start, c.a.end, tz)}) and "${c.b.summary}" (${formatRange(c.b.start, c.b.end, tz)}) overlap ${formatRange(c.overlapStart, c.overlapEnd, tz)} [event IDs: ${c.a.id}, ${c.b.id}]`
         );
-        return text(`Conflicts between ${formatDay(start)} and ${formatDay(end)}:\n\n${lines.join("\n")}`);
+        return text(`Conflicts${loaded.forWho} between ${formatDay(start)} and ${formatDay(end)}:\n\n${lines.join("\n")}${loaded.note}`);
       } catch (error) {
         return text(formatErrorForMcp(error), true);
       }
@@ -202,8 +251,11 @@ Returns each overlapping pair with the overlap window, or "none".`,
     "find_free_slots",
     `Find free time of at least a given length on each day, between an earliest and latest time, around the calendar's timed events. All-day events are not treated as busy.
 
-Use for "when could we do X this week?" questions.`,
+Use for "when could we do X this week?" questions. With member, only that
+family member's events count as busy (the events assigned to them on the
+frame), so this answers "when is David free?".`,
     {
+      member: z.string().optional().describe("Only this family member's events count as busy: name or category ID from get_family_members."),
       date: z.string().optional().describe("First day. Default today."),
       dateEnd: z.string().optional().describe("Last day. Default 7 days."),
       days: z.number().int().min(1).max(MAX_DAYS).optional(),
@@ -211,19 +263,19 @@ Use for "when could we do X this week?" questions.`,
       earliest: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("Window start, HH:MM local. Default 08:00."),
       latest: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("Window end, HH:MM local. Default 21:00."),
     },
-    async ({ date, dateEnd, days, durationMinutes, earliest, latest }) => {
+    async ({ member, date, dateEnd, days, durationMinutes, earliest, latest }) => {
       try {
         const tz = await getHouseholdTimezone();
         const { start, end } = resolveRange(date, dateEnd, days, tz);
-        const events = await getCalendarEvents({ dateMin: start, dateMax: end, timezone: tz });
-        const intervals = events.map((e) => eventToInterval(e as { id: string; attributes: Record<string, unknown> }, tz)).filter((i): i is Interval => i !== null);
-        const slots = findFreeSlots(intervals, eachDay(start, end), {
+        const loaded = await loadIntervals(start, end, tz, member);
+        if ("error" in loaded) return text(loaded.error, true);
+        const slots = findFreeSlots(loaded.intervals, eachDay(start, end), {
           earliest: earliest ?? "08:00",
           latest: latest ?? "21:00",
           minMinutes: durationMinutes ?? 60,
           timeZone: tz,
         });
-        if (slots.length === 0) return text(`No free slots of ${durationMinutes ?? 60}+ minutes between ${earliest ?? "08:00"} and ${latest ?? "21:00"} from ${formatDay(start)} to ${formatDay(end)}.`);
+        if (slots.length === 0) return text(`No free slots${loaded.forWho} of ${durationMinutes ?? 60}+ minutes between ${earliest ?? "08:00"} and ${latest ?? "21:00"} from ${formatDay(start)} to ${formatDay(end)}.${loaded.note}`);
         const byDay = new Map<string, string[]>();
         for (const s of slots) {
           const list = byDay.get(s.date) ?? [];
@@ -231,7 +283,7 @@ Use for "when could we do X this week?" questions.`,
           byDay.set(s.date, list);
         }
         const lines = [...byDay.entries()].map(([d, l]) => `- ${formatDay(d)}: ${l.join("; ")}`);
-        return text(`Free slots of ${durationMinutes ?? 60}+ minutes, ${earliest ?? "08:00"}–${latest ?? "21:00"} (${tz}):\n\n${lines.join("\n")}`);
+        return text(`Free slots${loaded.forWho} of ${durationMinutes ?? 60}+ minutes, ${earliest ?? "08:00"}–${latest ?? "21:00"} (${tz}):\n\n${lines.join("\n")}${loaded.note}`);
       } catch (error) {
         return text(formatErrorForMcp(error), true);
       }
