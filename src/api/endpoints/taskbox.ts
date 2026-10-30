@@ -4,6 +4,7 @@ import type {
   TaskBoxItemResource,
   CreateTaskBoxItemRequest,
 } from "../types.js";
+import { ParseError } from "../../utils/errors.js";
 
 export interface CreateTaskBoxItemOptions {
   summary: string;
@@ -22,21 +23,20 @@ export async function createTaskBoxItem(
   const client = getClient();
 
   const request: CreateTaskBoxItemRequest = {
-    data: {
-      type: "task_box_item",
-      attributes: {
-        summary: options.summary,
-        emoji_icon: options.emojiIcon ?? null,
-        routine: options.routine ?? false,
-        reward_points: options.rewardPoints ?? null,
-      },
-    },
+    summary: options.summary,
+    routine: options.routine ?? false,
+    ...(options.emojiIcon ? { emoji_icon: options.emojiIcon } : {}),
+    ...(options.rewardPoints !== undefined ? { reward_points: options.rewardPoints } : {}),
   };
 
-  const response = await client.post<TaskBoxItemResponse>(
+  const response = await client.post<TaskBoxItemResponse | TaskBoxItemResource>(
     "/api/frames/{frameId}/task_box/items",
     request
   );
 
-  return response.data;
+  const item = "data" in response ? response.data : response;
+  if (!item?.id) {
+    throw new ParseError("Skylight accepted the task but did not return its ID.");
+  }
+  return { ...item, id: String(item.id), attributes: item.attributes ?? { summary: options.summary } };
 }

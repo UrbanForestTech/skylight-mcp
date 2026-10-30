@@ -190,19 +190,33 @@ export type RewardsResponse = JsonApiResponse<RewardResource[]>;
 export type RewardPointsResponse = JsonApiResponse<RewardPointResource[]>;
 
 // Request body types for creating resources
+// Chore and task box bodies are flat: the JSON:API `data.attributes` wrapper
+// is rejected ("Category is required", "summary can't be blank").
 export interface CreateChoreRequest {
-  data: {
-    type: "chore";
-    attributes: Partial<ChoreAttributes>;
-    relationships?: ChoreRelationships;
-  };
+  summary: string;
+  category_id: string;
+  start: string;
+  start_time?: string;
+  reward_points?: number;
+  emoji_icon?: string;
+}
+
+/** POST /chores/create_multiple: the only way to create a recurring chore. */
+export interface CreateRecurringChoreRequest {
+  summary: string;
+  category_ids: string[];
+  recurrence_set: string[];
+  start: string;
+  start_time?: string;
+  reward_points?: number;
+  emoji_icon?: string;
 }
 
 export interface CreateTaskBoxItemRequest {
-  data: {
-    type: "task_box_item";
-    attributes: Partial<TaskBoxItemAttributes>;
-  };
+  summary: string;
+  emoji_icon?: string;
+  routine?: boolean;
+  reward_points?: number;
 }
 
 // List request types
@@ -277,13 +291,15 @@ export interface UpdateCalendarEventRequest {
 export type CalendarEventResponse = JsonApiResponse<CalendarEventResource>;
 
 // Chore update request type
-export interface UpdateChoreRequest {
-  data: {
-    type: "chore";
-    attributes: Partial<ChoreAttributes>;
-    relationships?: ChoreRelationships;
-  };
-}
+export type UpdateChoreRequest = Partial<{
+  summary: string;
+  category_id: string | null;
+  start: string;
+  start_time: string | null;
+  recurrence_set: string[] | null;
+  reward_points: number | null;
+  emoji_icon: string | null;
+}>;
 
 // Reward request types
 export interface CreateRewardRequest {

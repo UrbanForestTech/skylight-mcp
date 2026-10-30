@@ -32,10 +32,10 @@ event ids out of this file.
    `create_calendar_event` and `update_calendar_event` read
    `2026-10-31T06:00:00` as UTC, so the event landed at midnight. Treat a bare
    local time as the frame's own timezone; keep accepting explicit offsets.
-5. [ ] **Family member ids, then chores.** `get_family_members` returns each
+5. [x] **Family member ids, then chores.** `get_family_members` returns each
    member's category id. Then fix `create_chore`, which fails "Category is
    required": resolve the assignee name to its category id before posting.
-6. [ ] **Small fixes while in that code.**
+6. [x] **Small fixes while in that code.**
    - `create_task` fails "summary can't be blank" (probably the same
      body-shape problem as item 3).
    - `get_chores` prints "Invalid Date" for undated chores; print "no date".

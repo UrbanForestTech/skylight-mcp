@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-10-30
+
+### Fixed
+
+- **`create_chore`** failed "Category is required": Skylight wants a flat body
+  with `category_id`, not the JSON:API wrapper with a category relationship.
+  The assignee (a name or category ID) is now required and resolved before
+  posting; an ambiguous or unknown name fails with the family listed.
+  Recurring chores go through `/chores/create_multiple`, the only endpoint that
+  creates them.
+- **`update_chore`** sends a flat body, and `status: "completed"` now uses the
+  chore completions endpoint (a status in the chore update was ignored).
+  Reopening a chore is refused with a pointer to the app instead of silently
+  doing nothing.
+- **`create_task`** failed "summary can't be blank": same wrapper problem; it now
+  sends a flat body.
+- `get_chores` printed "Invalid Date" for undated chores; it prints "no date".
+- `get_chores` with `status: "completed"` returned nothing: Skylight reports
+  done chores as `complete`.
+- Completing a recurring chore by its occurrence ID (`<id>-<YYYY-MM-DD>`, as
+  `get_chores` lists it) now completes that occurrence on the base chore.
+
+### Added
+
+- `get_family_members` shows each member's category ID; `get_chores` shows each
+  chore's ID and its assignee's category ID.
+
+### Changed
+
+- The family-member cache is per client rather than per process, so a hosted
+  server cannot serve one household's members to another.
+
 ## [1.6.0] - 2026-10-30
 
 ### Fixed

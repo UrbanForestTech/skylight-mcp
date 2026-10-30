@@ -11,7 +11,8 @@ export function registerFamilyTools(server: McpServer): void {
     "get_family_members",
     `Get family members/profiles from Skylight.
 
-Shows who can be assigned chores and their profile details.
+Shows who can be assigned chores, with each member's category ID (the ID
+create_chore and update_chore assign by), and their profile details.
 
 Use this to answer:
 - "Who's in our family on Skylight?"
@@ -38,7 +39,7 @@ Use this to answer:
 
           const categoryList = categories
             .map((cat) => {
-              const parts = [`- ${cat.attributes.label ?? "Unnamed"}`];
+              const parts = [`- ${cat.attributes.label ?? "Unnamed"} (category ID: ${cat.id})`];
               if (cat.attributes.color) {
                 parts.push(`  Color: ${cat.attributes.color}`);
               }
@@ -62,7 +63,7 @@ Use this to answer:
         const memberList = members
           .map((member) => {
             const attrs = member.attributes;
-            const parts = [`- ${attrs.label ?? "Unnamed"}`];
+            const parts = [`- ${attrs.label ?? "Unnamed"} (category ID: ${member.id})`];
 
             if (attrs.color) {
               parts.push(`  Color: ${attrs.color}`);
@@ -82,7 +83,7 @@ Use this to answer:
           content: [
             {
               type: "text" as const,
-              text: `Family members:\n\n${memberList}`,
+              text: `Family members (pass the name or category ID as a chore assignee):\n\n${memberList}`,
             },
           ],
         };

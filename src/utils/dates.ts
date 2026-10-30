@@ -111,8 +111,10 @@ export function parseTime(input: string): string {
 /**
  * Format a date for display
  */
-export function formatDateForDisplay(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00");
+export function formatDateForDisplay(dateStr: string | null | undefined): string {
+  if (!dateStr) return "no date";
+  const date = new Date(dateStr.slice(0, 10) + "T00:00:00");
+  if (Number.isNaN(date.getTime())) return dateStr;
   return date.toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",

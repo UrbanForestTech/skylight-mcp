@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { getChores, createChore, updateChore, deleteChore } from "../api/endpoints/chores.js";
-import { findCategoryByName } from "../api/endpoints/categories.js";
+import { getChores, createChore, updateChore, completeChore, deleteChore } from "../api/endpoints/chores.js";
+import { getCategories, resolveCategory } from "../api/endpoints/categories.js";
 import { getTodayDate, getDateOffset, parseDate, parseTime, formatDateForDisplay } from "../utils/dates.js";
 import { formatErrorForMcp } from "../utils/errors.js";
 import { getHouseholdTimezone } from "../api/endpoints/frames.js";
@@ -60,11 +60,15 @@ Returns chores with their assignees, due dates, and completion status.`,
 
         // Filter by status
         if (status !== "all") {
-          chores = chores.filter((chore) => chore.attributes.status === status);
+          // Skylight reports a done chore as "complete"; accept either spelling.
+          const done = (s: string) => s === "complete" || s === "completed";
+          chores = chores.filter((chore) => (status === "completed" ? done(chore.attributes.status) : !done(chore.attributes.status)));
         }
 
-        // Build category lookup for assignee names
-        const categoryMap = new Map(result.categories.map((c) => [c.id, c.attributes.label ?? "Unknown"]));
+        // Build category lookup for assignee names. Chores come back without
+        // their categories included, so fall back to the family list.
+        const categories = result.categories.length > 0 ? result.categories : await getCategories().catch(() => []);
+        const categoryMap = new Map(categories.map((c) => [c.id, c.attributes.label ?? "Unknown"]));
 
         // Filter by assignee if specified
         if (assignee) {
@@ -96,13 +100,15 @@ Returns chores with their assignees, due dates, and completion status.`,
             const assigneeName = categoryId ? categoryMap.get(categoryId) : null;
 
             const parts = [
-              `- ${attrs.summary}`,
+              `- ${attrs.summary} (ID: ${chore.id})`,
               `  Date: ${formatDateForDisplay(attrs.start)}${attrs.start_time ? ` at ${attrs.start_time}` : ""}`,
               `  Status: ${attrs.status}`,
             ];
 
             if (assigneeName) {
-              parts.push(`  Assigned to: ${assigneeName}`);
+              parts.push(`  Assigned to: ${assigneeName} (category ID: ${categoryId})`);
+            } else if (categoryId) {
+              parts.push(`  Assigned to: category ID ${categoryId}`);
             }
 
             if (attrs.recurring) {
@@ -149,7 +155,10 @@ Use this when the user wants to:
 - Assign chores to family members
 - Create recurring chores
 
-The chore will appear on the Skylight display.`,
+Every chore needs an assignee: a family member's name or category ID from
+get_family_members. The chore will appear on the Skylight display.
+
+Returns: The chore ID, date and assignee.`,
     {
       summary: z.string().describe("Chore description (e.g., 'Empty the dishwasher')"),
       date: z
@@ -162,8 +171,7 @@ The chore will appear on the Skylight display.`,
         .describe("Due time (e.g., '10:00 AM', '14:30'). Optional."),
       assignee: z
         .string()
-        .optional()
-        .describe("Family member to assign (e.g., 'Dad', 'Mom', 'Kids')"),
+        .describe("Family member to assign: name or category ID from get_family_members (required by Skylight)"),
       recurring: z
         .boolean()
         .optional()
@@ -183,24 +191,15 @@ The chore will appear on the Skylight display.`,
         const tz = await getHouseholdTimezone();
         const choreDate = date ? parseDate(date, tz) : getTodayDate(tz);
 
-        // Resolve assignee to category ID
-        let categoryId: string | undefined;
-        if (assignee) {
-          const category = await findCategoryByName(assignee);
-          if (category) {
-            categoryId = category.id;
-          } else {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Could not find a family member named "${assignee}". Use get_family_members to see available family members.`,
-                },
-              ],
-              isError: true,
-            };
-          }
+        // Resolve assignee to category ID before posting: Skylight requires one.
+        const resolved = await resolveCategory(assignee);
+        if (!resolved.ok) {
+          return {
+            content: [{ type: "text" as const, text: resolved.error }],
+            isError: true,
+          };
         }
+        const category = resolved.category;
 
         // Convert simple recurrence patterns to RRULE
         let recurrenceSet: string | undefined;
@@ -219,27 +218,33 @@ The chore will appear on the Skylight display.`,
           }
         }
 
+        if (recurring && !recurrenceSet) {
+          return {
+            content: [{ type: "text" as const, text: "A recurring chore needs recurrencePattern ('daily', 'weekly', 'weekdays' or an RRULE)." }],
+            isError: true,
+          };
+        }
+
+        const startTime = time ? parseTime(time) : undefined;
         const chore = await createChore({
           summary,
           start: choreDate,
-          startTime: time ? parseTime(time) : undefined,
-          categoryId,
-          recurring: recurring ?? false,
+          startTime,
+          categoryId: category.id,
           recurrenceSet,
           rewardPoints,
         });
 
+        const savedStart = chore.attributes.start ?? choreDate;
+        const savedTime = chore.attributes.start_time ?? startTime;
         const parts = [
-          `Created chore: "${chore.attributes.summary}" (ID: ${chore.id})`,
-          `Date: ${formatDateForDisplay(chore.attributes.start)}${chore.attributes.start_time ? ` at ${chore.attributes.start_time}` : ""}`,
+          `Created chore: "${chore.attributes.summary ?? summary}" (ID: ${chore.id})`,
+          `Date: ${formatDateForDisplay(savedStart)}${savedTime ? ` at ${savedTime}` : ""}`,
+          `Assigned to: ${category.attributes.label ?? "Unnamed"} (category ID: ${category.id})`,
         ];
 
-        if (assignee) {
-          parts.push(`Assigned to: ${assignee}`);
-        }
-
-        if (chore.attributes.recurring) {
-          parts.push(`Recurring: Yes`);
+        if (recurrenceSet) {
+          parts.push(`Recurring: ${recurrenceSet}`);
         }
 
         return {
@@ -277,61 +282,92 @@ Use this when:
 Parameters:
 - choreId (required): ID of the chore (from get_chores)
 - summary: New description for the chore
-- status: "completed" to mark done, "pending" to mark incomplete
-- date: New due date
+- status: "completed" to mark done. Reopening a completed chore is done in
+  the Skylight app.
+- date: New due date. With status "completed" on a recurring chore, the
+  occurrence to complete instead
 - time: New due time
-- assignee: New family member assignment
+- assignee: New family member (name or category ID)
 
-Returns: The updated chore details.`,
+Returns: The chore ID and what changed.`,
     {
       choreId: z.string().describe("ID of the chore to update"),
       summary: z.string().optional().describe("New chore description"),
-      status: z.enum(["pending", "completed"]).optional().describe("'completed' to mark done, 'pending' to mark incomplete"),
-      date: z.string().optional().describe("New due date (YYYY-MM-DD or 'today', 'tomorrow')"),
+      status: z.enum(["pending", "completed"]).optional().describe("'completed' to mark done ('pending' is not supported by the API)"),
+      date: z.string().optional().describe("New due date (YYYY-MM-DD or 'today', 'tomorrow'); with status 'completed', the occurrence to complete"),
       time: z.string().nullable().optional().describe("New due time (e.g., '10:00 AM', or null to clear)"),
-      assignee: z.string().nullable().optional().describe("New family member assignment (or null to unassign)"),
+      assignee: z.string().nullable().optional().describe("New family member: name or category ID (null to unassign)"),
       rewardPoints: z.number().nullable().optional().describe("New reward points (or null to clear)"),
     },
     async ({ choreId, summary, status, date, time, assignee, rewardPoints }) => {
       try {
         const tz = await getHouseholdTimezone();
+        if (status === "pending") {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Reopening a completed chore is not supported by the Skylight API the connector uses. Uncheck it in the Skylight app.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
         const updates: Parameters<typeof updateChore>[1] = {};
+        const completing = status === "completed";
+        const day = date !== undefined ? parseDate(date, tz) : undefined;
 
         if (summary !== undefined) updates.summary = summary;
-        if (status !== undefined) updates.status = status;
-        if (date !== undefined) updates.start = parseDate(date, tz);
+        // When completing, `date` names the occurrence; it does not move the chore.
+        if (day !== undefined && !completing) updates.start = day;
         if (time !== undefined) updates.startTime = time ? parseTime(time) : null;
         if (rewardPoints !== undefined) updates.rewardPoints = rewardPoints;
 
         // Handle assignee
+        let assigneeText = "";
         if (assignee !== undefined) {
           if (assignee === null) {
             updates.categoryId = null;
+            assigneeText = " (unassigned)";
           } else {
-            const category = await findCategoryByName(assignee);
-            if (!category) {
+            const resolved = await resolveCategory(assignee);
+            if (!resolved.ok) {
               return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: `Could not find family member "${assignee}". Use get_family_members to see available members.`,
-                  },
-                ],
+                content: [{ type: "text" as const, text: resolved.error }],
                 isError: true,
               };
             }
-            updates.categoryId = category.id;
+            updates.categoryId = resolved.category.id;
+            assigneeText = ` (assigned to ${resolved.category.attributes.label ?? "Unnamed"}, category ID: ${resolved.category.id})`;
           }
         }
 
-        const chore = await updateChore(choreId, updates);
-        const statusText = status === "completed" ? " (marked complete)" : status === "pending" ? " (marked pending)" : "";
+        const lines: string[] = [];
+        if (Object.keys(updates).length > 0) {
+          const chore = await updateChore(choreId, updates);
+          lines.push(`Updated chore: "${chore.attributes.summary ?? summary ?? choreId}" (ID: ${chore.id})${assigneeText}`);
+        }
+        if (completing) {
+          // A recurring chore's occurrence ID is "<choreId>-<YYYY-MM-DD>": complete
+          // that occurrence on the base chore.
+          const occurrence = /^(\d+)-(\d{4}-\d{2}-\d{2})$/.exec(choreId);
+          if (occurrence) {
+            await completeChore(occurrence[1], day ?? occurrence[2]);
+          } else {
+            await completeChore(choreId, day);
+          }
+          lines.push(`Marked chore ${choreId} complete${day ? ` for ${formatDateForDisplay(day)}` : ""}`);
+        }
+        if (lines.length === 0) {
+          lines.push(`Nothing to change on chore ${choreId}.`);
+        }
 
         return {
           content: [
             {
               type: "text" as const,
-              text: `Updated chore: "${chore.attributes.summary}" (ID: ${chore.id})${statusText}`,
+              text: lines.join("\n"),
             },
           ],
         };
