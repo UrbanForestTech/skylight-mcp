@@ -2,6 +2,7 @@ import { getClient } from "../client.js";
 import type {
   CalendarEventsResponse,
   CalendarEventResource,
+  CategoryResource,
   CalendarEventResponse,
   SourceCalendarsResponse,
   SourceCalendarResource,
@@ -47,6 +48,45 @@ export async function getCalendarEvents(
     }
   );
   return response.data;
+}
+
+export interface CalendarEventsWithAssignees {
+  events: CalendarEventResource[];
+  /** Categories (family members) Skylight included alongside the events. */
+  categories: CategoryResource[];
+}
+
+/**
+ * Get calendar events with their assigned family members (include=categories)
+ */
+export async function getCalendarEventsWithAssignees(
+  options: Omit<GetCalendarEventsOptions, "include">
+): Promise<CalendarEventsWithAssignees> {
+  const client = getClient();
+  const response = await client.get<CalendarEventsResponse>("/api/frames/{frameId}/calendar_events", {
+    date_min: options.dateMin,
+    date_max: addDays(options.dateMax, 1),
+    timezone: options.timezone ?? client.timezone,
+    include: "categories",
+  });
+  const categories = (response.included ?? []).filter((r): r is CategoryResource => r.type === "category");
+  return { events: response.data, categories };
+}
+
+/**
+ * IDs of the family members an event is assigned to, or null when Skylight
+ * sent no assignment data at all (as opposed to an empty assignment).
+ */
+export function eventCategoryIds(event: CalendarEventResource): string[] | null {
+  const rel = event.relationships?.categories ?? event.relationships?.category;
+  if (rel && "data" in rel) {
+    const data = rel.data;
+    if (data == null) return [];
+    return (Array.isArray(data) ? data : [data]).map((d) => String(d.id));
+  }
+  const attr = event.attributes.category_ids;
+  if (Array.isArray(attr)) return attr.map(String);
+  return null;
 }
 
 /**

@@ -39,7 +39,7 @@ event ids out of this file.
    - `create_task` fails "summary can't be blank" (probably the same
      body-shape problem as item 3).
    - `get_chores` prints "Invalid Date" for undated chores; print "no date".
-7. [ ] **`get_calendar_events` returns assignees.** Include the assigned
+7. [x] **`get_calendar_events` returns assignees.** Include the assigned
    category ids and names on each event, if Skylight's API exposes them. This
    is the one thing the frame adds over the source calendars, and the weekly
    plan needs "who is driving". Today the run guesses from whose calendar holds

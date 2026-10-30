@@ -141,6 +141,8 @@ export interface CalendarEventResource {
   type: "calendar_event";
   id: string;
   attributes: CalendarEventAttributes;
+  /** With include=categories, `categories` holds the assigned family members. */
+  relationships?: Record<string, { data?: JsonApiResourceId | JsonApiResourceId[] | null }>;
 }
 
 // Device types

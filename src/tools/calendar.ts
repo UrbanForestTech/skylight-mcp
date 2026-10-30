@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import { getCategories } from "../api/endpoints/categories.js";
 import {
-  getCalendarEvents,
+  eventCategoryIds,
+  getCalendarEventsWithAssignees,
   getSourceCalendars,
   createCalendarEvent,
   updateCalendarEvent,
@@ -54,7 +56,10 @@ Use this to answer questions like:
 - "What do we have scheduled this weekend?"
 - "Are there any events on Friday?"
 
-Returns a list of events with their titles, times, and details.`,
+Returns a list of events with their titles, times, and details, including
+assigned_to: the family members the event is assigned to on the frame (name
+and category ID), which can differ from whose calendar it came from. Calendar
+or group categories that are not people are listed as other_categories.`,
     {
       date: z
         .string()
@@ -71,11 +76,19 @@ Returns a list of events with their titles, times, and details.`,
         const startDate = date ? parseDate(date, tz) : getTodayDate(tz);
         const endDate = dateEnd ? parseDate(dateEnd, tz) : startDate;
 
-        const events = await getCalendarEvents({
+        const { events, categories: included } = await getCalendarEventsWithAssignees({
           dateMin: startDate,
           dateMax: endDate,
           timezone: tz,
         });
+        const assigneeIds = new Map(events.map((e) => [e.id, eventCategoryIds(e)]));
+        // Name the assignees from what Skylight included, else the family list.
+        const needsNames = [...assigneeIds.values()].some((ids) => ids?.length);
+        const categories = included.length > 0 || !needsNames ? included : await getCategories().catch(() => []);
+        const byId = new Map(categories.map((c) => [c.id, c]));
+        const label = (id: string) => `${byId.get(id)?.attributes.label ?? "Unknown"} (category ID: ${id})`;
+        // Family members are profile-linked categories; the rest are calendar or group tags.
+        const isPerson = (id: string) => byId.get(id)?.attributes.linked_to_profile !== false;
 
         if (events.length === 0) {
           const dateRange =
@@ -103,6 +116,17 @@ Returns a list of events with their titles, times, and details.`,
               if (value !== null && value !== undefined) {
                 parts.push(`  ${key}: ${value}`);
               }
+            }
+
+            // Who the event is assigned to on the frame (not whose calendar it came from)
+            const ids = assigneeIds.get(event.id);
+            if (ids === null || ids === undefined) {
+              parts.push(`  assigned_to: unknown (Skylight sent no assignment)`);
+            } else {
+              const people = ids.filter(isPerson);
+              const tags = ids.filter((id) => !isPerson(id));
+              parts.push(`  assigned_to: ${people.length ? people.map(label).join(", ") : "nobody"}`);
+              if (tags.length) parts.push(`  other_categories: ${tags.map(label).join(", ")}`);
             }
 
             return `- Event (ID: ${event.id})\n${parts.join("\n")}`;
