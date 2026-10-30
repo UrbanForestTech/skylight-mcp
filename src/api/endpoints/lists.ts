@@ -10,6 +10,7 @@ import type {
   UpdateListItemRequest,
   ListItemResponse,
 } from "../types.js";
+import { ParseError } from "../../utils/errors.js";
 
 /**
  * Get all lists
@@ -128,20 +129,21 @@ export async function createListItem(
   section?: string
 ): Promise<ListItemResource> {
   const client = getClient();
-  const request: CreateListItemRequest = {
-    data: {
-      type: "list_item",
-      attributes: {
-        label,
-        section: section ?? null,
-      },
-    },
-  };
-  const response = await client.post<ListItemResponse>(
+  const request: CreateListItemRequest = section ? { label, section } : { label };
+  const response = await client.post<ListItemResponse | ListItemResource>(
     `/api/frames/{frameId}/lists/${listId}/list_items`,
     request
   );
-  return response.data;
+  return listItemFrom(response);
+}
+
+/** Accept the item wrapped in JSON:API `data` or bare; fail loudly if there is no id. */
+function listItemFrom(response: ListItemResponse | ListItemResource): ListItemResource {
+  const item = "data" in response ? response.data : response;
+  if (!item?.id) {
+    throw new ParseError("Skylight accepted the list item but did not return its ID.");
+  }
+  return { ...item, id: String(item.id) };
 }
 
 /**
@@ -153,17 +155,12 @@ export async function updateListItem(
   updates: { label?: string; status?: "pending" | "completed"; section?: string | null }
 ): Promise<ListItemResource> {
   const client = getClient();
-  const request: UpdateListItemRequest = {
-    data: {
-      type: "list_item",
-      attributes: updates,
-    },
-  };
-  const response = await client.request<ListItemResponse>(
+  const request: UpdateListItemRequest = updates;
+  const response = await client.request<ListItemResponse | ListItemResource>(
     `/api/frames/{frameId}/lists/${listId}/list_items/${itemId}`,
-    { method: "PUT", body: request }
+    { method: "PATCH", body: request }
   );
-  return response.data;
+  return listItemFrom(response);
 }
 
 /**

@@ -32,6 +32,7 @@ import {
 import { HOSTED_EFFECTS, handleMcpRequest } from "./mcp.js";
 import { consentPage, errorPage, html, landingPage, pastePage } from "./pages.js";
 import { accessTokenTtlSeconds, isSkylightProps, toCredential, withCredential, type SkylightProps } from "./props.js";
+import { VERSION } from "../version.js";
 
 export interface Env {
   OAUTH_KV: KVNamespace;
@@ -43,7 +44,6 @@ export interface Env {
 }
 
 const SCOPE = "skylight";
-const VERSION = "1.4.1";
 
 interface UpstreamData {
   codeVerifier: string;

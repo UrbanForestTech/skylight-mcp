@@ -9,7 +9,11 @@ import {
   NotFoundError,
   RateLimitError,
   SkylightError,
+  describeHttpError,
 } from "../utils/errors.js";
+
+/** How long a Skylight request may take before it is abandoned. */
+export const DEFAULT_TIMEOUT_MS = 20_000;
 
 /**
  * Skylight subscription status types
@@ -22,6 +26,8 @@ export interface RequestOptions {
   body?: unknown;
   /** Override Skylight-Api-Version for this request (some resources need a newer one). */
   apiVersion?: string;
+  /** Abandon the request after this many ms. Default: DEFAULT_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
 
 /**
@@ -237,25 +243,21 @@ export class SkylightClient {
       throw new RateLimitError(retryAfter ? parseInt(retryAfter, 10) : undefined);
     }
 
-    // Try to get error details from response
-    let errorMessage = `HTTP ${status}`;
+    let errorBody = "";
     try {
-      const errorBody = await response.text();
-      if (errorBody) {
-        errorMessage += `: ${errorBody.slice(0, 200)}`;
-      }
+      errorBody = await response.text();
     } catch {
-      // Ignore parse errors
+      // Ignore read errors; the status alone still goes back
     }
 
-    throw new SkylightError(errorMessage, "HTTP_ERROR", status, status >= 500);
+    throw new SkylightError(describeHttpError(status, errorBody), "HTTP_ERROR", status, status >= 500);
   }
 
   /**
    * Make an authenticated request to the Skylight API
    */
   async request<T>(endpoint: string, options: RequestOptions = {}, isRetry = false): Promise<T> {
-    const { method = "GET", params, body, apiVersion } = options;
+    const { method = "GET", params, body, apiVersion, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
 
     // Replace {frameId} placeholder with actual frame ID
     const resolvedEndpoint = endpoint.replace("{frameId}", this.config.frameId);
@@ -274,11 +276,23 @@ export class SkylightClient {
       headers["Content-Type"] = "application/json";
     }
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      // Fail fast and say so, rather than stalling an unattended run.
+      const name = error instanceof Error ? error.name : "";
+      if (name === "TimeoutError" || name === "AbortError") {
+        throw new SkylightError(`Skylight did not respond within ${Math.round(timeoutMs / 1000)}s.`, "TIMEOUT", undefined, true);
+      }
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new SkylightError(`Could not reach Skylight: ${reason}`, "UNREACHABLE", undefined, true);
+    }
 
     console.error(`[client] Response: ${response.status}`);
 

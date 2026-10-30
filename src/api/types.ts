@@ -228,28 +228,19 @@ export interface UpdateListRequest {
   };
 }
 
-// List item request types
+// List item request types. Flat bodies: the JSON:API `data.attributes`
+// wrapper is rejected with 422 "Label can't be blank".
 export interface CreateListItemRequest {
-  data: {
-    type: "list_item";
-    attributes: {
-      label: string;
-      section?: string | null;
-    };
-  };
+  label: string;
+  section?: string;
 }
 
-export interface UpdateListItemRequest {
-  data: {
-    type: "list_item";
-    attributes: Partial<{
-      label: string;
-      status: "pending" | "completed";
-      section: string | null;
-      position: number | null;
-    }>;
-  };
-}
+export type UpdateListItemRequest = Partial<{
+  label: string;
+  status: "pending" | "completed";
+  section: string | null;
+  position: number | null;
+}>;
 
 export type ListItemResponse = JsonApiResponse<ListItemResource>;
 

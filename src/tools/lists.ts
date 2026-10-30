@@ -13,6 +13,7 @@ import {
   updateListItem,
   deleteListItem,
 } from "../api/endpoints/lists.js";
+import type { ListItemResource } from "../api/types.js";
 import { formatErrorForMcp } from "../utils/errors.js";
 
 /**
@@ -52,6 +53,16 @@ async function resolveListId(
   }
 
   return { success: false, error: "Either listId or listName is required" };
+}
+
+/**
+ * One line per item: checkbox, label, then the id (and creation time when the
+ * API sends it) so the caller can check the item off with update_list_item.
+ */
+function formatListItem(item: ListItemResource): string {
+  const status = item.attributes.status === "completed" ? "[x]" : "[ ]";
+  const added = item.attributes.created_at ? `, added ${item.attributes.created_at}` : "";
+  return `${status} ${item.attributes.label} (item ID: ${item.id}${added})`;
 }
 
 export function registerListTools(server: McpServer): void {
@@ -128,8 +139,11 @@ Use this to answer:
 - "Show me my to-do list"
 - "What items are on [list name]?"
 
-Returns items organized by section with their completion status.`,
+Returns the list ID, then each item with its item ID, grouped by section:
+"[ ]" pending, "[x]" completed. Pass the IDs to update_list_item to check
+an item off.`,
     {
+      listId: z.string().optional().describe("ID of the list to query (from get_lists). Takes precedence over listName."),
       listName: z
         .string()
         .optional()
@@ -144,11 +158,13 @@ Returns items organized by section with their completion status.`,
         .default(false)
         .describe("Include completed/checked-off items"),
     },
-    async ({ listName, listType, includeCompleted }) => {
+    async ({ listId, listName, listType, includeCompleted }) => {
       try {
         // Find the list
-        let list;
-        if (listName) {
+        let list: { id: string } | undefined;
+        if (listId) {
+          list = { id: listId };
+        } else if (listName) {
           list = await findListByName(listName);
           if (!list) {
             return {
@@ -227,22 +243,18 @@ Returns items organized by section with their completion status.`,
         }
 
         // Format output
-        const output: string[] = [`${result.list.attributes.label}:`];
+        const output: string[] = [`${result.list.attributes.label} (list ID: ${result.list.id}):`];
 
         // Items without sections first
-        if (noSection.length > 0) {
-          for (const item of noSection) {
-            const status = item.attributes.status === "completed" ? "[x]" : "[ ]";
-            output.push(`${status} ${item.attributes.label}`);
-          }
+        for (const item of noSection) {
+          output.push(formatListItem(item));
         }
 
         // Then items by section
         for (const [sectionName, sectionItems] of sections) {
           output.push(`\n${sectionName}:`);
           for (const item of sectionItems) {
-            const status = item.attributes.status === "completed" ? "[x]" : "[ ]";
-            output.push(`${status} ${item.attributes.label}`);
+            output.push(formatListItem(item));
           }
         }
 
@@ -352,7 +364,7 @@ Returns: The updated list details.`,
           content: [
             {
               type: "text" as const,
-              text: `Updated list: "${updated.attributes.label}"`,
+              text: `Updated list: "${updated.attributes.label}" (ID: ${updated.id})`,
             },
           ],
         };
@@ -429,7 +441,8 @@ Parameters:
 
 If no list is specified, adds to the default grocery list.
 
-Returns: Confirmation of the added item.
+Returns: Confirmation with the new item's ID and the list ID; record them so a
+retry does not add a duplicate.
 
 Related: Use get_lists to see available lists and their IDs.`,
     {
@@ -454,7 +467,7 @@ Related: Use get_lists to see available lists and their IDs.`,
           content: [
             {
               type: "text" as const,
-              text: `Added "${item.attributes.label}" to ${resolved.name}${sectionText}`,
+              text: `Added "${item.attributes?.label ?? label}" to ${resolved.name}${sectionText} (item ID: ${item.id}, list ID: ${resolved.id})`,
             },
           ],
         };
@@ -505,7 +518,7 @@ Returns: The updated item details.`,
           content: [
             {
               type: "text" as const,
-              text: `Updated item: "${item.attributes.label}"${statusText}`,
+              text: `Updated item: "${item.attributes?.label ?? label ?? itemId}" (item ID: ${item.id})${statusText}`,
             },
           ],
         };

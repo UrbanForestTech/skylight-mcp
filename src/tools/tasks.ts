@@ -43,7 +43,7 @@ The task will appear on the Skylight display in the task box.`,
           routine: routine ?? false,
         });
 
-        const parts = [`Created task: "${task.attributes.summary}"`];
+        const parts = [`Created task: "${task.attributes.summary}" (ID: ${task.id})`];
 
         if (task.attributes.emoji_icon) {
           parts.push(`Emoji: ${task.attributes.emoji_icon}`);

@@ -12,7 +12,7 @@ event ids out of this file.
 
 ## Build order
 
-1. [ ] **Foundation for unattended runs.**
+1. [x] **Foundation for unattended runs.**
    - `healthcheck` tool: returns frame id, household timezone and connector
      version. Fails fast when Skylight is unreachable, so a 6 a.m. run logs
      "connector down" instead of stalling.
@@ -20,11 +20,11 @@ event ids out of this file.
      run log can record it and a retry does not create a duplicate.
    - Errors come back as plain text with Skylight's message (the 422 body),
      not a bare status code.
-2. [ ] **`get_list_items` returns ids.** Each item: `id`, `label`, `section`,
+2. [x] **`get_list_items` returns ids.** Each item: `id`, `label`, `section`,
    `completed` (true/false), and `created_at` if the API has it. Without ids
    nothing can be checked off. This also unlocks the existing
    `update_list_item`.
-3. [ ] **Fix `create_list_item`.** Today it fails HTTP 422 "Label can't be
+3. [x] **Fix `create_list_item`.** Today it fails HTTP 422 "Label can't be
    blank", by list name and by list id. Accept `listId` plus `label` (and
    optional `section`); return the new item's id. This is the one write the
    rulebook needs on every run.

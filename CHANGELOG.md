@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-10-30
+
+### Added
+
+- **`healthcheck`** tool: connector version, frame ID, household and connector
+  timezones, and Plus status. Gives up after 8 seconds and reports
+  `Connector: DOWN` with the reason, so unattended runs fail fast.
+- **List item IDs**: `get_list_items` shows the list ID and each item's ID (and
+  creation time when Skylight sends it), and accepts `listId`.
+
+### Changed
+
+- Every write tool's confirmation includes the ID of what it created or changed
+  (`create_chore`, `update_chore`, `update_list`, `create_list_item`,
+  `update_list_item` and `create_task` did not).
+- Skylight errors show the API's own message (`HTTP 422: Label can't be blank`)
+  instead of the raw JSON body.
+- Requests time out after 20 seconds, and a network failure is reported as
+  "Could not reach Skylight" rather than an uncaught exception.
+
+### Fixed
+
+- **`create_list_item`** failed with HTTP 422 "Label can't be blank": Skylight
+  wants a flat `{label, section}` body, not the JSON:API `data.attributes`
+  wrapper. `update_list_item` now sends a flat body with PATCH as well.
+
 ## [1.4.1] - 2026-10-29
 
 ### Fixed

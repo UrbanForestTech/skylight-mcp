@@ -69,6 +69,60 @@ export class ParseError extends SkylightError {
 }
 
 /**
+ * Pull the human-readable message out of a Skylight error body.
+ * Handles JSON:API `errors: [{detail|title}]`, Rails-style
+ * `errors: {field: ["msg"]}`, and plain `error`/`message` strings.
+ * Returns null when the body has nothing readable (e.g. an HTML error page).
+ */
+export function extractApiMessage(body: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const record = parsed as Record<string, unknown>;
+  const messages: string[] = [];
+
+  const { errors } = record;
+  if (Array.isArray(errors)) {
+    for (const entry of errors) {
+      if (typeof entry === "string") messages.push(entry);
+      else if (entry && typeof entry === "object") {
+        const e = entry as Record<string, unknown>;
+        const text = e.detail ?? e.title ?? e.message;
+        if (typeof text === "string") messages.push(text);
+      }
+    }
+  } else if (errors && typeof errors === "object") {
+    for (const [field, value] of Object.entries(errors as Record<string, unknown>)) {
+      const name = field === "base" ? "" : `${field.charAt(0).toUpperCase()}${field.slice(1).replace(/_/g, " ")} `;
+      for (const text of Array.isArray(value) ? value : [value]) {
+        if (typeof text === "string") messages.push(`${name}${text}`);
+      }
+    }
+  }
+
+  for (const key of ["error_description", "message", "error"] as const) {
+    if (messages.length === 0 && typeof record[key] === "string") messages.push(record[key] as string);
+  }
+
+  return messages.length > 0 ? messages.join("; ").slice(0, 500) : null;
+}
+
+/**
+ * Message for a failed Skylight response: the API's own words when it gave
+ * any, otherwise the start of the raw body.
+ */
+export function describeHttpError(status: number, body: string): string {
+  const detail = extractApiMessage(body);
+  if (detail) return `HTTP ${status}: ${detail}`;
+  const raw = body.trim();
+  return raw ? `HTTP ${status}: ${raw.slice(0, 200)}` : `HTTP ${status}`;
+}
+
+/**
  * Format an error for MCP tool response
  * Accepts unknown to handle any value from catch blocks safely
  */

@@ -5,6 +5,7 @@ import { loadConfig } from "./config.js";
 import { initializeClient } from "./api/client.js";
 import { registerTools } from "./tools/registry.js";
 import { defaultCredentialStore } from "./api/credential-store.js";
+import { VERSION } from "./version.js";
 
 /**
  * Create and configure the MCP server
@@ -21,7 +22,7 @@ export async function createServer(): Promise<{
 
   const server = new McpServer({
     name: "skylight",
-    version: "1.0.0",
+    version: VERSION,
   });
 
   registerTools(server, { hasPlus });

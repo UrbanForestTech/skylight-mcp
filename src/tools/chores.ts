@@ -230,7 +230,7 @@ The chore will appear on the Skylight display.`,
         });
 
         const parts = [
-          `Created chore: "${chore.attributes.summary}"`,
+          `Created chore: "${chore.attributes.summary}" (ID: ${chore.id})`,
           `Date: ${formatDateForDisplay(chore.attributes.start)}${chore.attributes.start_time ? ` at ${chore.attributes.start_time}` : ""}`,
         ];
 
@@ -331,7 +331,7 @@ Returns: The updated chore details.`,
           content: [
             {
               type: "text" as const,
-              text: `Updated chore: "${chore.attributes.summary}"${statusText}`,
+              text: `Updated chore: "${chore.attributes.summary}" (ID: ${chore.id})${statusText}`,
             },
           ],
         };

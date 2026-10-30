@@ -15,6 +15,7 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { registerCalendarTools } from "./calendar.js";
 import { registerChoreTools } from "./chores.js";
 import { registerFamilyTools } from "./family.js";
+import { registerHealthTools } from "./health.js";
 import { registerListTools } from "./lists.js";
 import { registerMealTools } from "./meals.js";
 import { registerMessageTools } from "./messages.js";
@@ -60,6 +61,7 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = {
   get_colors: "read",
   get_frame_info: "read",
   get_devices: "read",
+  healthcheck: "read",
   // rewards (Plus)
   get_rewards: "read",
   get_reward_points: "read",
@@ -147,6 +149,7 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions):
   registerListTools(filtered);
   registerTaskTools(filtered);
   registerFamilyTools(filtered);
+  registerHealthTools(filtered);
   registerMiscTools(filtered);
   registerMessageTools(filtered);
   // Planning tools degrade gracefully without Plus (meals are simply omitted),
