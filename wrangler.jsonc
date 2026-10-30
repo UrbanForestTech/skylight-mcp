@@ -9,7 +9,7 @@
   "observability": { "enabled": true },
   "kv_namespaces": [
     // Create with: npx wrangler kv namespace create OAUTH_KV   (then paste the id here)
-    { "binding": "OAUTH_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+    { "binding": "OAUTH_KV", "id": "cfaf9f48a1d44e188b62a71556183e51" }
   ],
   "vars": {
     "DEFAULT_TIMEZONE": "America/Los_Angeles"
