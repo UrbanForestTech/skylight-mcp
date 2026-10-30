@@ -12,7 +12,7 @@
     { "binding": "OAUTH_KV", "id": "cfaf9f48a1d44e188b62a71556183e51" }
   ],
   "vars": {
-    "DEFAULT_TIMEZONE": "America/Los_Angeles"
+    "DEFAULT_TIMEZONE": "America/Denver"
   }
   // Set with `npx wrangler secret put <NAME>`, never in this file:
   //   SETUP_PASSPHRASE  12+ chars; required on the consent page to link an account
