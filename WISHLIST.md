@@ -48,15 +48,16 @@ event ids out of this file.
    `member` (name or category id) so the tools look only at that person's
    events. Depends on item 7. Until then, availability comes from the Google
    and Outlook calendars, not these tools.
-9. [ ] **Narrow `delete_calendar_event`** (decision pending). Deletes only
-   Skylight-native events (`source: skylight`) that are not recurring; refuses
-   everything else with a message to change it at the source calendar. The
-   local connector's delete removes a whole series without warning; this would
-   be the safe version. If the hosted connector should have no delete at all,
-   drop this item.
+
+All build-order items shipped as of v1.9.0 (2026-10-30).
 
 ## Cut, and why
 
+- **Narrow `delete_calendar_event`** (decided 2026-10-30): the hosted connector
+  keeps no delete at all. The only events it could safely remove are
+  Skylight-native ones, which agents are told not to create, so it would
+  rarely help, and it would be the first way an unattended run could destroy
+  calendar data. Clean up in the Skylight app.
 - **Calendar picker on `create_calendar_event`:** the Google Calendar connector
   already writes to the household's Google calendar and the frame picks it up
   by sync. Agents should not create Skylight-native events.
