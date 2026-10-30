@@ -15,7 +15,7 @@ import {
 } from "../api/endpoints/meals.js";
 import { parseDate, formatDateForDisplay, getTodayDate, getDateOffset } from "../utils/dates.js";
 import { formatErrorForMcp } from "../utils/errors.js";
-import { getConfig } from "../config.js";
+import { getHouseholdTimezone } from "../api/endpoints/frames.js";
 
 export function registerMealTools(server: McpServer): void {
   // get_meal_categories tool
@@ -296,9 +296,9 @@ Returns: List of scheduled meals.`,
     },
     async ({ date, dateEnd }) => {
       try {
-        const config = getConfig();
-        const startDate = date ? parseDate(date, config.timezone) : getTodayDate(config.timezone);
-        const endDate = dateEnd ? parseDate(dateEnd, config.timezone) : getDateOffset(7, config.timezone);
+        const tz = await getHouseholdTimezone();
+        const startDate = date ? parseDate(date, tz) : getTodayDate(tz);
+        const endDate = dateEnd ? parseDate(dateEnd, tz) : getDateOffset(7, tz);
 
         const sittings = await getMealSittings({
           dateMin: startDate,
@@ -384,8 +384,8 @@ Returns: The created meal sitting.`,
             isError: true,
           };
         }
-        const config = getConfig();
-        const mealDate = parseDate(date, config.timezone);
+        const tz = await getHouseholdTimezone();
+        const mealDate = parseDate(date, tz);
 
         const sitting = await createMealSitting({
           date: mealDate,

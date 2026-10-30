@@ -28,7 +28,7 @@ event ids out of this file.
    blank", by list name and by list id. Accept `listId` plus `label` (and
    optional `section`); return the new item's id. This is the one write the
    rulebook needs on every run.
-4. [ ] **Times without an offset use the frame's timezone.**
+4. [x] **Times without an offset use the frame's timezone.**
    `create_calendar_event` and `update_calendar_event` read
    `2026-10-31T06:00:00` as UTC, so the event landed at midnight. Treat a bare
    local time as the frame's own timezone; keep accepting explicit offsets.

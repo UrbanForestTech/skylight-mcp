@@ -13,8 +13,8 @@ export function registerHealthTools(server: McpServer): void {
     "healthcheck",
     `Check that the Skylight connector is up before doing anything else.
 
-Returns the connector version, frame ID, the household's timezone and the
-timezone the connector reads bare times in. Fails fast (about 8 seconds) with
+Returns the connector version, frame ID and the household's timezone (the
+zone times without an offset are read in). Fails fast (about 8 seconds) with
 "Connector: DOWN" and the reason when Skylight is unreachable or the sign-in
 has expired, so a scheduled run can log it and stop instead of stalling.`,
     {},
@@ -29,17 +29,11 @@ has expired, so a scheduled run can log it and stop instead of stalling.`,
         const lines = [
           "Connector: OK",
           ...head,
-          `Household timezone: ${householdTz}`,
-          `Connector timezone: ${client.timezone}`,
+          `Household timezone: ${householdTz} (times without an offset are read in this zone)`,
+          `Fallback timezone: ${client.timezone} (used only if the household's cannot be read)`,
         ];
         if (typeof attrs.plus === "boolean") lines.push(`Skylight Plus: ${attrs.plus ? "yes" : "no"}`);
         lines.push(`Response time: ${Date.now() - started} ms`);
-        if (householdTz !== "unknown" && householdTz !== client.timezone) {
-          lines.push(
-            `\nWarning: bare times are read as ${client.timezone}, but the household is on ${householdTz}. ` +
-              "Reconnect and choose the household's timezone."
-          );
-        }
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       } catch (error) {
         const lines = ["Connector: DOWN", ...head, `Reason: ${formatErrorForMcp(error)}`];

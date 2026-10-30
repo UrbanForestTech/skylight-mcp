@@ -25,7 +25,7 @@ import {
   type MealCategoryResource,
   type MealSittingResource,
 } from "../api/endpoints/meals.js";
-import { getConfig } from "../config.js";
+import { getHouseholdTimezone } from "../api/endpoints/frames.js";
 import { getTodayDate, parseDate } from "../utils/dates.js";
 import { formatErrorForMcp } from "../utils/errors.js";
 import {
@@ -99,8 +99,7 @@ Parameters:
     },
     async ({ date, dateEnd, days, includeLists }) => {
       try {
-        const config = getConfig();
-        const tz = config.timezone;
+        const tz = await getHouseholdTimezone();
         const { start, end } = resolveRange(date, dateEnd, days, tz);
         const dayList = eachDay(start, end);
 
@@ -183,7 +182,7 @@ Returns each overlapping pair with the overlap window, or "none".`,
     },
     async ({ date, dateEnd, days }) => {
       try {
-        const tz = getConfig().timezone;
+        const tz = await getHouseholdTimezone();
         const { start, end } = resolveRange(date, dateEnd, days, tz);
         const events = await getCalendarEvents({ dateMin: start, dateMax: end, timezone: tz });
         const intervals = events.map((e) => eventToInterval(e as { id: string; attributes: Record<string, unknown> }, tz)).filter((i): i is Interval => i !== null);
@@ -214,7 +213,7 @@ Use for "when could we do X this week?" questions.`,
     },
     async ({ date, dateEnd, days, durationMinutes, earliest, latest }) => {
       try {
-        const tz = getConfig().timezone;
+        const tz = await getHouseholdTimezone();
         const { start, end } = resolveRange(date, dateEnd, days, tz);
         const events = await getCalendarEvents({ dateMin: start, dateMax: end, timezone: tz });
         const intervals = events.map((e) => eventToInterval(e as { id: string; attributes: Record<string, unknown> }, tz)).filter((i): i is Interval => i !== null);
@@ -266,7 +265,7 @@ Parameters:
     },
     async ({ meals, dryRun, addRecipesToGroceryList }) => {
       try {
-        const tz = getConfig().timezone;
+        const tz = await getHouseholdTimezone();
         const categories = await getMealCategories();
         const byName = new Map(categories.map((c) => [mealCategoryName(c).toLowerCase(), c]));
 

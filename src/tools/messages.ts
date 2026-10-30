@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { assertNudgeId, createNudge, findNudge, getNudges, updateNudge, type NudgeResource } from "../api/endpoints/messages.js";
 import { getCategories, findCategoryByName } from "../api/endpoints/categories.js";
-import { getConfig } from "../config.js";
+import { getHouseholdTimezone } from "../api/endpoints/frames.js";
 import { parseDate, getDateOffset } from "../utils/dates.js";
 import { dateInZone, formatDay, formatTime } from "../utils/schedule.js";
 import { formatErrorForMcp } from "../utils/errors.js";
@@ -25,7 +25,7 @@ Defaults to the last 7 days through the next 7 days. Max 31 days.`,
     },
     async ({ date, dateEnd }) => {
       try {
-        const { timezone } = getConfig();
+        const timezone = await getHouseholdTimezone();
         const start = date ? parseDate(date, timezone) : getDateOffset(-7, timezone);
         const end = dateEnd ? parseDate(dateEnd, timezone) : getDateOffset(7, timezone);
         if (end < start) throw new Error("dateEnd is before date.");
@@ -101,7 +101,7 @@ Check get_messages first to avoid posting a duplicate.`,
             ],
           };
         }
-        const sent = await createNudge({ body: text, readAloud: readAloud === true, senderCategoryId, timeZone: getConfig().timezone });
+        const sent = await createNudge({ body: text, readAloud: readAloud === true, senderCategoryId, timeZone: await getHouseholdTimezone() });
         const id = sent?.id ? ` [message ID: ${sent.id}]` : "";
         return {
           content: [{ type: "text" as const, text: `Posted to the frame${who}${readAloud ? " (read aloud)" : ""}: "${text}"${id}` }],
@@ -129,7 +129,7 @@ ID from get_messages (looks within 31 days either side of today).`,
         const id = assertNudgeId(messageId.trim());
         const text = body.trim();
         if (!text) throw new Error("Message is empty.");
-        const { timezone } = getConfig();
+        const timezone = await getHouseholdTimezone();
         const existing = await findNudge(id, timezone);
         if (!existing) throw new Error(`No message with ID ${id} within 31 days of today.`);
         let senderCategoryId: string | undefined;

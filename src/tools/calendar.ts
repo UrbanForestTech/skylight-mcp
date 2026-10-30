@@ -8,9 +8,40 @@ import {
   updateCalendarEvent,
   deleteCalendarEvent,
 } from "../api/endpoints/calendar.js";
+import { getHouseholdTimezone } from "../api/endpoints/frames.js";
+import type { CalendarEventResource } from "../api/types.js";
 import { getTodayDate, parseDate, formatDateForDisplay } from "../utils/dates.js";
 import { formatErrorForMcp } from "../utils/errors.js";
-import { getConfig } from "../config.js";
+import {
+  describeEventTimes,
+  isDateOnly,
+  resolveAllDayEnd,
+  resolveEventTime,
+  type EventTime,
+} from "../utils/event-times.js";
+
+/**
+ * "Saved: <when>" from the event Skylight returned (the truth), falling back
+ * to what we sent, plus any notes about how the input was read.
+ */
+function savedLine(
+  event: CalendarEventResource | undefined,
+  sent: { start?: EventTime; end?: EventTime; allDay?: boolean },
+  tz: string,
+  notes: string[]
+): string {
+  const attrs = (event?.attributes ?? {}) as Record<string, unknown>;
+  const parsed = (value: unknown) => (typeof value === "string" ? Date.parse(value) : NaN);
+  const start = Number.isNaN(parsed(attrs.starts_at)) ? sent.start?.epoch : parsed(attrs.starts_at);
+  const end = Number.isNaN(parsed(attrs.ends_at)) ? sent.end?.epoch : parsed(attrs.ends_at);
+  const allDay = typeof attrs.all_day === "boolean" ? attrs.all_day : (sent.allDay ?? false);
+  const lines: string[] = [];
+  if (start !== undefined) {
+    lines.push(`Saved: ${describeEventTimes(start, end ?? start, allDay, tz)} (${tz})`);
+  }
+  for (const note of notes) lines.push(`Note: ${note}`);
+  return lines.length ? `\n${lines.join("\n")}` : "";
+}
 
 export function registerCalendarTools(server: McpServer): void {
   // get_calendar_events tool
@@ -36,14 +67,14 @@ Returns a list of events with their titles, times, and details.`,
     },
     async ({ date, dateEnd }) => {
       try {
-        const config = getConfig();
-        const startDate = date ? parseDate(date, config.timezone) : getTodayDate(config.timezone);
-        const endDate = dateEnd ? parseDate(dateEnd, config.timezone) : startDate;
+        const tz = await getHouseholdTimezone();
+        const startDate = date ? parseDate(date, tz) : getTodayDate(tz);
+        const endDate = dateEnd ? parseDate(dateEnd, tz) : startDate;
 
         const events = await getCalendarEvents({
           dateMin: startDate,
           dateMax: endDate,
-          timezone: config.timezone,
+          timezone: tz,
         });
 
         if (events.length === 0) {
@@ -178,22 +209,28 @@ Use this when:
 - Creating family activities: "Schedule soccer practice every Saturday at 10am"
 - Adding reminders: "Put Mom's birthday on the calendar"
 
+Times are household local time: send "2026-10-31T06:00" with no offset and
+the connector applies the household timezone, including daylight-saving
+changes. An explicit offset or "Z" is honoured as given.
+
 Parameters:
 - summary (required): Event title (e.g., "Dentist Appointment")
-- startsAt (required): Start time in ISO format or natural language
-- endsAt (required): End time in ISO format or natural language
+- startsAt (required): Start, YYYY-MM-DDTHH:MM household time (YYYY-MM-DD if allDay)
+- endsAt (required): End, same format. For all-day events, the day after the
+  last day, or the start date again for a one-day event
 - allDay: Set to true for all-day events
 - description: Additional notes for the event
 - location: Where the event takes place
 - categoryIds: Family member IDs to associate with the event
 
-Returns: The created event details.
+Returns: The event ID and the saved time read back in household time. Check
+the readback before telling the user the event is booked.
 
 Related: Use get_family_members to get category IDs for assignments.`,
     {
       summary: z.string().describe("Event title (e.g., 'Dentist Appointment')"),
-      startsAt: z.string().describe("Start time (ISO format like '2025-01-15T14:00:00')"),
-      endsAt: z.string().describe("End time (ISO format like '2025-01-15T15:00:00')"),
+      startsAt: z.string().describe("Start in household time, e.g. '2026-01-15T14:00' (no offset needed)"),
+      endsAt: z.string().describe("End in household time, e.g. '2026-01-15T15:00'"),
       allDay: z.boolean().optional().default(false).describe("True for all-day events"),
       description: z.string().optional().describe("Additional notes for the event"),
       location: z.string().optional().describe("Event location"),
@@ -201,16 +238,23 @@ Related: Use get_family_members to get category IDs for assignments.`,
     },
     async ({ summary, startsAt, endsAt, allDay, description, location, categoryIds }) => {
       try {
-        const config = getConfig();
+        const tz = await getHouseholdTimezone();
+        const start = resolveEventTime(startsAt, tz, allDay);
+        const end = allDay ? resolveAllDayEnd(start, endsAt, tz) : resolveEventTime(endsAt, tz, false);
+        if (!allDay && end.epoch <= start.epoch) {
+          throw new Error(`End (${endsAt}) is not after start (${startsAt}).`);
+        }
+        const notes = [start.note, end.note].filter((n): n is string => Boolean(n));
+
         const event = await createCalendarEvent({
           summary,
-          starts_at: startsAt,
-          ends_at: endsAt,
+          starts_at: start.iso,
+          ends_at: end.iso,
           all_day: allDay,
           description,
           location,
           category_ids: categoryIds,
-          timezone: config.timezone,
+          timezone: tz,
           kind: "standard",
         });
 
@@ -218,7 +262,7 @@ Related: Use get_family_members to get category IDs for assignments.`,
           content: [
             {
               type: "text" as const,
-              text: `Created calendar event "${summary}" (ID: ${event.id})`,
+              text: `Created calendar event "${summary}" (ID: ${event.id})${savedLine(event, { start, end, allDay }, tz, notes)}`,
             },
           ],
         };
@@ -244,18 +288,20 @@ Use this when:
 Parameters:
 - eventId (required): ID of the event to update (from get_calendar_events)
 - summary: New title for the event
-- startsAt: New start time (ISO format)
-- endsAt: New end time (ISO format)
+- startsAt: New start, YYYY-MM-DDTHH:MM household time (YYYY-MM-DD for all-day)
+- endsAt: New end, same format
 - description: Updated notes
 - location: Updated location
 - categoryIds: Updated family member assignments
 
-Returns: The updated event details.`,
+Times are household local time, as in create_calendar_event; no offset needed.
+
+Returns: The event ID and the saved time read back in household time.`,
     {
       eventId: z.string().describe("ID of the event to update"),
       summary: z.string().optional().describe("New event title"),
-      startsAt: z.string().optional().describe("New start time (ISO format)"),
-      endsAt: z.string().optional().describe("New end time (ISO format)"),
+      startsAt: z.string().optional().describe("New start in household time, e.g. '2026-01-15T14:00'"),
+      endsAt: z.string().optional().describe("New end in household time, e.g. '2026-01-15T15:00'"),
       allDay: z.boolean().optional().describe("Change to all-day event"),
       description: z.string().optional().describe("Updated notes"),
       location: z.string().optional().describe("Updated location"),
@@ -265,20 +311,43 @@ Returns: The updated event details.`,
       try {
         const updates: Record<string, unknown> = {};
         if (summary !== undefined) updates.summary = summary;
-        if (startsAt !== undefined) updates.starts_at = startsAt;
-        if (endsAt !== undefined) updates.ends_at = endsAt;
         if (allDay !== undefined) updates.all_day = allDay;
         if (description !== undefined) updates.description = description;
         if (location !== undefined) updates.location = location;
         if (categoryIds !== undefined) updates.category_ids = categoryIds;
 
+        // Convert times like create does. Without allDay, a bare date means all-day.
+        const sent: { start?: EventTime; end?: EventTime; allDay?: boolean } = { allDay };
+        const notes: string[] = [];
+        let tz: string | undefined;
+        if (startsAt !== undefined || endsAt !== undefined) {
+          tz = await getHouseholdTimezone();
+          const zone = tz;
+          const dayMode = (input: string) => allDay ?? isDateOnly(input);
+          if (startsAt !== undefined) sent.start = resolveEventTime(startsAt, zone, dayMode(startsAt));
+          if (endsAt !== undefined) {
+            sent.end =
+              dayMode(endsAt) && sent.start
+                ? resolveAllDayEnd(sent.start, endsAt, zone)
+                : resolveEventTime(endsAt, zone, dayMode(endsAt));
+          }
+          if (sent.start && sent.end && sent.end.epoch <= sent.start.epoch) {
+            throw new Error(`End (${endsAt}) is not after start (${startsAt}).`);
+          }
+          if (sent.start) updates.starts_at = sent.start.iso;
+          if (sent.end) updates.ends_at = sent.end.iso;
+          updates.timezone = zone;
+          for (const t of [sent.start, sent.end]) if (t?.note) notes.push(t.note);
+        }
+
         const event = await updateCalendarEvent(eventId, updates);
+        const readback = savedLine(event, sent, tz ?? (await getHouseholdTimezone()), notes);
 
         return {
           content: [
             {
               type: "text" as const,
-              text: `Updated calendar event (ID: ${event.id})`,
+              text: `Updated calendar event (ID: ${event.id})${readback}`,
             },
           ],
         };

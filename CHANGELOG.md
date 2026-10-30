@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-10-30
+
+### Fixed
+
+- **Calendar times without an offset landed in UTC.** Skylight reads a bare
+  `2026-10-31T06:00` as UTC and ignores the request's `timezone`, so the event
+  showed at midnight in Denver. `create_calendar_event` and
+  `update_calendar_event` now send every time with the household offset for
+  that date (DST-aware). Explicit offsets and `Z` are still honoured, with a
+  note when they are not the household's. All-day events are anchored at local
+  midnight, ending the following midnight.
+- A time in the spring-forward gap is refused with a message; an ambiguous
+  fall-back time takes the first occurrence and says so.
+
+### Changed
+
+- The household timezone (the frame's own setting) is now the one source of
+  truth for calendar, planning, chores, meals and messages. The timezone chosen
+  at sign-in is only a fallback when the frame's cannot be read.
+- Calendar create and update confirmations read the saved time back, e.g.
+  `Saved: Sat, Oct 31, 6:00 AM–6:30 AM MDT (America/Denver)`.
+
 ## [1.5.0] - 2026-10-30
 
 ### Added

@@ -5,7 +5,7 @@ import { getChores, createChore, updateChore, deleteChore } from "../api/endpoin
 import { findCategoryByName } from "../api/endpoints/categories.js";
 import { getTodayDate, getDateOffset, parseDate, parseTime, formatDateForDisplay } from "../utils/dates.js";
 import { formatErrorForMcp } from "../utils/errors.js";
-import { getConfig } from "../config.js";
+import { getHouseholdTimezone } from "../api/endpoints/frames.js";
 
 export function registerChoreTools(server: McpServer): void {
   // get_chores tool
@@ -46,9 +46,9 @@ Returns chores with their assignees, due dates, and completion status.`,
     },
     async ({ date, dateEnd, includeLate, assignee, status }) => {
       try {
-        const config = getConfig();
-        const startDate = date ? parseDate(date, config.timezone) : getTodayDate(config.timezone);
-        const endDate = dateEnd ? parseDate(dateEnd, config.timezone) : getDateOffset(7, config.timezone);
+        const tz = await getHouseholdTimezone();
+        const startDate = date ? parseDate(date, tz) : getTodayDate(tz);
+        const endDate = dateEnd ? parseDate(dateEnd, tz) : getDateOffset(7, tz);
 
         const result = await getChores({
           after: startDate,
@@ -180,8 +180,8 @@ The chore will appear on the Skylight display.`,
     },
     async ({ summary, date, time, assignee, recurring, recurrencePattern, rewardPoints }) => {
       try {
-        const config = getConfig();
-        const choreDate = date ? parseDate(date, config.timezone) : getTodayDate(config.timezone);
+        const tz = await getHouseholdTimezone();
+        const choreDate = date ? parseDate(date, tz) : getTodayDate(tz);
 
         // Resolve assignee to category ID
         let categoryId: string | undefined;
@@ -294,12 +294,12 @@ Returns: The updated chore details.`,
     },
     async ({ choreId, summary, status, date, time, assignee, rewardPoints }) => {
       try {
-        const config = getConfig();
+        const tz = await getHouseholdTimezone();
         const updates: Parameters<typeof updateChore>[1] = {};
 
         if (summary !== undefined) updates.summary = summary;
         if (status !== undefined) updates.status = status;
-        if (date !== undefined) updates.start = parseDate(date, config.timezone);
+        if (date !== undefined) updates.start = parseDate(date, tz);
         if (time !== undefined) updates.startTime = time ? parseTime(time) : null;
         if (rewardPoints !== undefined) updates.rewardPoints = rewardPoints;
 

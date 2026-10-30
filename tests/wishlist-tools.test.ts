@@ -52,7 +52,7 @@ async function callTool(name: string, args: Record<string, unknown> = {}) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("healthcheck", () => {
-  it("reports version, frame, timezones and warns when they differ", async () => {
+  it("reports version, frame, household and fallback timezones", async () => {
     stubSkylight(() => json({ data: { type: "frame", id: "frame-1", attributes: { timezone: "America/Denver", plus: true } } }));
     const { text, isError } = await callTool("healthcheck");
     expect(isError).toBe(false);
@@ -60,9 +60,8 @@ describe("healthcheck", () => {
     expect(text).toContain(`Version: ${VERSION}`);
     expect(text).toContain("Frame ID: frame-1");
     expect(text).toContain("Household timezone: America/Denver");
-    expect(text).toContain("Connector timezone: America/Los_Angeles");
+    expect(text).toContain("Fallback timezone: America/Los_Angeles");
     expect(text).toContain("Skylight Plus: yes");
-    expect(text).toContain("Warning:");
   });
 
   it("reports DOWN with the reason when Skylight is unreachable", async () => {

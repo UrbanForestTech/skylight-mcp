@@ -57,7 +57,7 @@ describe("hosted MCP handler", () => {
     expect(calls.length).toBeGreaterThan(0);
     for (const c of calls) {
       expect(new URL(c.url).origin).toBe("https://app.ourskylight.com");
-      expect(c.url).toContain("/frames/frame-1/");
+      expect(new URL(c.url).pathname).toMatch(/\/frames\/frame-1(\/|$)/);
       expect(c.auth).toBe("Bearer test-access-1");
     }
   });
